@@ -1,8 +1,18 @@
-use actix_web::{web, App, HttpServer, Responder};
+use axum::{
+    extract::Json,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Router,
+};
+use leptos::*;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, Sqlite};
 use dotenv::dotenv;
 use std::env;
+use std::net::SocketAddr;
+use tokio::runtime::Runtime;
+use mod voting;
 
 #[derive(Serialize, Deserialize)]
 struct Vote {
@@ -17,7 +27,7 @@ struct VoteResponse {
     vote: String,
 }
 
-async fn save_vote(vote: web::Json<Vote>, pool: web::Data<SqlitePool>) -> impl Responder {
+async fn save_vote(Json(vote): Json<Vote>, pool: SqlitePool) -> impl IntoResponse {
     let query_result = sqlx::query!(
         r#"
         INSERT INTO votes (user_id, vote)
@@ -26,23 +36,40 @@ async fn save_vote(vote: web::Json<Vote>, pool: web::Data<SqlitePool>) -> impl R
         vote.user_id,
         vote.vote
     )
-    .execute(pool.get_ref())
+    .execute(&pool)
     .await;
 
     match query_result {
-        Ok(_) => web::Json(VoteResponse {
+        Ok(_) => (StatusCode::OK, Json(VoteResponse {
             id: 0, // You might want to retrieve the actual ID from the database
             user_id: vote.user_id.clone(),
             vote: vote.vote.clone(),
-        }),
+        })),
         Err(e) => {
             eprintln!("Failed to save vote: {}", e);
-            actix_web::HttpResponse::InternalServerError().finish()
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
         }
     }
 }
 
-#[actix_web::main]
+#[component]
+fn app() -> impl IntoView {
+    view! {
+        <div>
+            <h1>"Vote Server"</h1>
+            <form on:submit=|event| {
+                event.prevent_default();
+                // Handle form submission
+            }>
+                <input type="text" placeholder="User ID" />
+                <input type="text" placeholder="Vote" />
+                <button type="submit">"Submit"</button>
+            </form>
+        </div>
+    }
+}
+
+#[tokio::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -50,12 +77,19 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to create pool.");
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .route("/vote", web::post().to(save_vote))
-    })
-    .bind("127.0.0.1:8080")?
-    .run()
-    .await
+    let app = Router::new()
+        .route("/vote", post(save_vote))
+        .route("/", get(|| async {
+            let app = create_app(app);
+            let html = app.render().await;
+            (StatusCode::OK, html)
+        }));
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+
+    Ok(())
 }

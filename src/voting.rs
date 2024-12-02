@@ -95,6 +95,20 @@ struct Poll {
 }
 
 #[derive(Serialize, Deserialize)]
+struct PollResult {
+    creator_user_id: Voter::voter_id,
+    poll_id: Uuid,
+    results: Vec<QuestionResult>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct QuestionResult {
+    poll_id: Uuid,
+    question_id: Uuid,
+    vote_results: Vec<u64> 
+}
+
+#[derive(Serialize, Deserialize)]
 struct RankedChoiceVote {
     user_id: Voter::voter_id,
     poll_id: Poll::poll_id,
@@ -140,7 +154,7 @@ fn remove_delegation(from: Uuid, to: Uuid, topics: Vec<Topic>) -> void {
 }
 
 fn add_to_vote_history(voter: Uuid, ) -> void {
-
+    todo!("when a vote is submitted, add it to the voter history");
 }
 
 fn create_question(
